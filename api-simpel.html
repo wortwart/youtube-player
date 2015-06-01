@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<meta name="author" content="Herbert Braun"/>
+	<title>YouTube-Player</title>
+	<style type="text/css">
+		:root {
+			font-family: Verdana, Arial, sans-serif;
+		}
+		.click {
+			cursor: pointer;
+		}
+		#playlist {
+			display: table;
+			border-collapse: collapse;
+			max-width: 50%;
+		}
+		#playlist > li {
+			display: table-row;
+			border-top: 1px solid gray;
+			border-bottom: 1px solid gray;
+		}
+		#playlist > li img, #playlist > li div {
+			display: table-cell;
+			vertical-align: top;
+			margin: 0;
+		}
+		#playlist > li div {
+			padding: 0.25em 1em;
+		}
+		#playlist > li img {
+			margin: 0;
+		}
+		#playlist > li p {
+			margin: 0.5em 0;
+			max-height: 1.65em;
+			overflow-x: hidden;
+			overflow-y: auto;
+		}
+		#playerBox {
+			position: fixed;
+			display: none;
+			top: 0;
+			right: 0;
+			margin: 0;
+			padding: 5px;
+			width: 640px;
+			background-color: #ddd;
+		}
+		#playerBox > p {
+			white-space: pre-wrap;
+			max-height: 200px;
+			overflow-x: hidden;
+			overflow-y: auto;
+		}
+		#progressbar {
+			display: inline-block;
+			position: relative;
+			width: calc(100% - 180px);
+			height: 5px;
+			margin: 12px 2px;
+			background-color: black;
+			vertical-align: middle;
+		}
+		#progressbarInner {
+			display: block;
+			width: 0;
+			height: 3px;
+			margin: 1px 0;
+			background-color: red;
+			text-align: left
+		}
+	</style>
+</head>
+<body>
+	<h1>Schöne Musik</h1>
+	<ol id="playlist"></ol>
+	<div id="playerBox">
+		<h2 id="movieTitle"></h2>
+		<div id="player"></div>
+		<div>
+			<span id="controlPlay" class="click">Play/Pause</span>
+			<span id="progressbar">
+				<span id="progressbarInner"></span>
+			</span>
+		</div>
+		<p id="movieDesc"></p>
+		<span id="playerClose" class="click">Player schließen</span>
+	</div>
+
+	<script type="text/javascript" src="https://www.youtube.com/iframe_api"></script>
+	<script type="text/javascript">
+var youtubeAPIKey = 'YOUR API KEY',
+youtubeURL = 'https://www.googleapis.com/youtube/v3/',
+videolist = 'YOUR PLAYLIST',
+data = [],
+playerBox = document.getElementById('playerBox'),
+progressbarInterval,
+
+// Fetches data from YouTube data API
+ajax = function(param, token) {
+	var req = new XMLHttpRequest(),
+	url = youtubeURL + param + '&key=' + youtubeAPIKey;
+	if (token) url += '&pageToken=' + token;
+	req.open('GET', url, true);
+	// Ajax query gets a response
+	req.onload = function() {
+		// HTTP status is okay: parse JSON data
+		if (req.status >= 200 && req.status < 400) {
+			var newdata = JSON.parse(req.responseText);
+			if (!newdata.items || !newdata.items.length) return;
+			// push new data to data array
+			data.push.apply(data, newdata.items);
+			// are we done loading?
+			if (data.length < newdata.pageInfo.totalResults && newdata.nextPageToken) {
+				// no: call yourself and load more data
+				ajax(param, newdata.nextPageToken);
+			} else {
+				// yes: hand over to onPlaylistLoaded()
+				onPlaylistLoaded();
+			}
+		} else {
+			alert('YouTube responded with a server error');
+		}
+	};
+	req.onerror = function() {
+		alert('Connection error when fetching YouTube data');
+	};
+	req.send();
+},
+
+// called when playlist data are loaded
+onPlaylistLoaded = function() {
+	// write playlist data into HTML
+	var olHtml = '';
+	data.forEach(function(el, i) {
+		olHtml += '<li id="yt' + i + '"><img src="' + el.snippet.thumbnails.default.url + '" alt="Video-Thumbnail" class="click"/>';
+		olHtml += '<div><h3 class="click">' + el.snippet.title + '</h3>';
+		olHtml += '<p>' + el.snippet.description + '</p>';
+		olHtml += '</div></li>';
+	});
+	document.getElementById('playlist').innerHTML = olHtml;
+	// attach event: play single video on click
+	var clickable = document.querySelectorAll('.click');
+	for (var i = 0; i < clickable.length; i++) {
+		clickable[i].addEventListener('click', function(ev) {
+			// search dataset number in parent elements
+			var thisEl = ev.target;
+			while (!thisEl.id || thisEl.id.indexOf('yt') < 0)
+				thisEl = thisEl.parentNode;
+			playMyVideo(parseInt(thisEl.id.substr(2)));
+		});
+	}
+},
+
+// when YouTube IFrame Player API is loaded
+onYouTubeIframeAPIReady = function() {
+	// create player object
+	player = new YT.Player('player', {
+		width: 640,
+		height: 390,
+		playerVars: {
+			controls: 0,
+			showinfo: 0,
+			modestbranding: 1,
+			cc_load_policy: 1
+		},
+		events: {
+			//'onReady': onPlayerReady,
+			'onStateChange': onStateChange,
+			'onError': onError
+		}
+	});
+},
+
+// triggers when player state changes
+onStateChange = function(ev) {
+	// stop updating progress bar
+	clearInterval(progressbarInterval);
+	// is the player playing?
+	if (ev.data === 1) {
+		// update progressbar
+		progressbarInterval = setInterval(function() {
+			progressbarInner.style.width = (player.getCurrentTime() / player.getDuration()) * progressbar.getBoundingClientRect().width + 'px';
+		}, 300);
+	}
+},
+
+// triggers on error. Nothing to do.
+onError = function(ev) {
+	console.log(ev);
+},
+
+// play video with the given dataset number
+playMyVideo = function(nr) {
+	// update video information
+	document.getElementById('movieTitle').textContent = data[nr].snippet.title;
+	document.getElementById('movieDesc').textContent = data[nr].snippet.description;
+	playerBox.style.display = 'block';
+	// load and play video
+	player.loadVideoById(data[nr].snippet.resourceId.videoId);
+};
+
+// control: play/pause button
+document.getElementById('controlPlay').addEventListener('click', function() {
+	if (player.getPlayerState() === 1)
+		player.pauseVideo();
+	else
+		player.playVideo();
+});
+
+// close player
+document.getElementById('playerClose').addEventListener('click', function() {
+	player.stopVideo();
+	playerBox.style.display = 'none';
+});
+
+// start: load Ajax data
+ajax('playlistItems?part=snippet&playlistId=' + videolist + '&maxResults=50');
+	</script>
+</body>
+</html>

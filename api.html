@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<meta name="author" content="Herbert Braun"/>
+	<title>MyTube</title>
+	<style type="text/css">
+		@font-face {
+			font-family: 'Fredericka the Great';
+			font-style: normal;
+			font-weight: 400;
+			src: local('Fredericka the Great'), local('FrederickatheGreat'), url('fred.ttf') format('truetype');
+		}
+		:root {
+			font-family: Verdana, Arial, sans-serif;
+		}
+		a, .click {
+			cursor: pointer;
+			text-decoration: none;
+			color: #005;
+		}
+		a:hover, .click:hover {text-decoration: underline;}
+		h1, h2, h3 {
+			font-family: 'Fredericka the Great', cursive;
+			font-weight: normal;
+		}
+		h1 {
+			margin: 1rem;
+			font-size: 4em;
+		}
+		#sortOptions {
+			padding: 0;
+		}
+		#sortOptions li {
+			display: inline;
+			margin-right: 0.5em;
+		}
+		#sortOptions li:before {
+			content: '• ';
+		}
+		#playlist {
+			display: table;
+			border-collapse: collapse;
+			max-width: 50%;
+		}
+		#playlist > li {
+			display: table-row;
+			border-top: 1px solid gray;
+			border-bottom: 1px solid gray;
+		}
+		#playlist > li img, #playlist > li div {
+			display: table-cell;
+			vertical-align: top;
+			margin: 0;
+		}
+		#playlist > li div {
+			padding: 0.25em 1em;
+		}
+		#playlist > li h3 {
+			display: inline;
+			margin: 0;
+		}
+		#playlist > li p {
+			margin: 0.5em 0;
+			max-height: 1.65em;
+			font-size: small;
+			overflow-x: hidden;
+			overflow-y: auto;
+		}
+		#playlist > li div span {
+			font-size: small;
+		}
+		#preview, #playerBox {
+			position: fixed;
+			display: none;
+			top: 0;
+			right: 0;
+			margin: 0;
+			padding: 5px;
+			width: 480px;
+			background-color: #ddd;
+		}
+		#playerBox {
+			width: 640px;
+		}
+		#preview > p, #playerBox > p:last-of-type {
+			white-space: pre-wrap;
+			max-height: 200px;
+			overflow-x: hidden;
+			overflow-y: auto;
+		}
+		.controlButtons {
+			display: inline-block;
+			width: 32px;
+			height: 32px;
+			color: transparent;
+			cursor: pointer;
+			vertical-align: middle;
+		}
+		/* Icons: (C) chetank_webdesigner/pixabay */
+		#controlPlay {
+			background-image: url('iconPlay.png');
+		}
+		#controlPrev {
+			background-image: url('iconPrev.png');
+		}
+		#controlNext {
+			background-image: url('iconNext.png');
+		}
+		#controlProgressbar {
+			display: inline-block;
+			position: relative;
+			width: calc(100% - 265px);
+			height: 5px;
+			margin: 12px 2px;
+			background-color: black;
+			vertical-align: middle;
+		}
+		#controlProgressbarInner {
+			display: block;
+			width: 0;
+			height: 3px;
+			margin: 1px 0;
+			background-color: red;
+			text-align: left
+		}
+		#slider {
+			display: block;
+			position: absolute;
+			width: 16px;
+			height: 16px;
+			left: -8px;
+			top: -5.5px;
+			background-image: url('slider.png');
+			cursor: pointer;
+		}
+		#playtime {
+			position: absolute;
+			right: 5px;
+			margin-top: -1.25em;
+		}
+	</style>
+</head>
+<body>
+	<h1>Schöne Musik.</h1>
+	<p><span id="controlPlayAll" class="click">Alle <span id="numberTitles"></span> Titel abspielen</span> &middot; Liste sortieren:</p>
+	<ul id="sortOptions">
+		<li id="sortAZ" class="click">alphabetisch</li>
+		<li id="sortZA" class="click">absteigend</li>
+		<li id="sort09" class="click">neueste</li>
+		<li id="sort90" class="click">älteste</li>
+		<li id="sortkl" class="click">kürzeste</li>
+		<li id="sortlk" class="click">längste</li>
+	</ul>
+	<ol id="playlist"></ol>
+	<figure id="preview"></figure>
+	<div id="playerBox">
+		<h2 id="movieTitle"></h2>
+		<div id="player"></div>
+		<div>
+			<span class="controlButtons" id="controlPlay">Play/Pause</span>
+			<span class="controlButtons" id="controlPrev">Voriges Video</span>
+			<span id="controlProgressbar">
+				<span id="controlProgressbarInner"></span>
+				<span id="slider" draggable="true"></span>
+			</span>
+			<span class="controlButtons" id="controlNext">Nächstes Video</span>
+			<div id="playtime">
+				<span id="timePlayed"></span>/<span id="movieDuration"></span>
+			</div>
+		</div>
+		<p id="movieDesc"></p>
+		<span id="playerClose" class="click">Player schließen</span>
+	</div>
+
+	<script type="text/javascript" src="https://www.youtube.com/iframe_api"></script>
+
+	<script type="text/javascript">
+// Shortcuts. Yes, I could have used jQuery.
+var $ = document.querySelector.bind(document),
+$$ = document.querySelectorAll.bind(document),
+youtubeAPIKey = 'YOUR API KEY',
+youtubeURL = 'https://www.googleapis.com/youtube/v3/',
+videolist = 'YOUR PLAYLIST',
+data = [],
+ids = [],
+player,
+nowPlaying,
+ajaxCount = 0,
+playing = false,
+
+// static HTML Elements
+playerBox = $('#playerBox'),
+controlPlayAll = $('#controlPlayAll'),
+sortOptions = $$('#sortOptions > li'),
+movieTitle = $('#movieTitle'),
+movieDesc = $('#movieDesc'),
+movieDuration = $('#movieDuration'),
+timePlayed = $('#timePlayed'),
+controlPlay = $('#controlPlay'),
+controlPrev = $('#controlPrev'),
+controlNext = $('#controlNext'),
+progressbar = $('#controlProgressbar'),
+progressbarInner = $('#controlProgressbarInner'),
+slider = $('#slider'),
+progressbarInterval,
+progressbarWidth,
+
+// Core functions
+
+// Fetches data from YouTube data API
+ajax = function(param, items, token) {
+	ajaxCount++; // keeps track on open requests
+	var req = new XMLHttpRequest(),
+	url = youtubeURL + param + '&key=' + youtubeAPIKey;
+	if (!items) items = [];
+	if (token) url += '&pageToken=' + token;
+	req.open('GET', url, true);
+	// Ajax query gets a response
+	req.onload = function() {
+		ajaxCount--;
+		// HTTP status is okay: parse JSON data
+		if (req.status >= 200 && req.status < 400) {
+			var newdata = JSON.parse(req.responseText);
+			if (!newdata.items || !newdata.items.length) return;
+			// push new data to items array
+			items.push.apply(items, newdata.items);
+			// are we done loading?
+			if (items.length < newdata.pageInfo.totalResults) {
+				if (!newdata.nextPageToken) {
+					alert('Error loading YouTube data');
+					return;
+				}
+				// no: call yourself and load more data
+				ajax(param, items, newdata.nextPageToken);
+			} else {
+				// yes: hand over to onPlaylistLoaded()
+				onPlaylistLoaded(items);
+			}
+		} else {
+			console.log(req);
+			alert('YouTube responded with a server error');
+		}
+	};
+	req.onerror = function() {
+		console.log(req);
+		alert('Connection error when fetching YouTube data');
+	};
+	req.send();
+},
+
+// called when playlist data are loaded
+onPlaylistLoaded = function(items) {
+	// if data is empty: copy items
+	if (!data.length) {
+		data = items.slice();
+		$('#numberTitles').textContent = data.length;
+		// extract ids into array
+		for (var i = 0; i < data.length; i++)
+			ids.push(data[i].snippet.resourceId.videoId);
+		// call ajax function for additional data
+		for (var idsplit = [], start = 0; ids.length > start; start += 50) {
+			idsplit = ids.slice(start, start + 50);
+			ajax('videos?part=contentDetails&id=' + idsplit.join(','));
+		}
+	} else {
+		// combine existing data with newly fetched items
+		var startIndex = ids.indexOf(items[0].id);
+		items.forEach(function(el, i) {
+			for (attr in el) data[startIndex + i][attr] = el[attr];
+		});
+		// have all ajax requests finished?
+		if (!ajaxCount) {
+			data.forEach(function(el) {
+				// translate duration into seconds (for sorting)
+				el.contentDetails.durSec = translateHMS(el.contentDetails.duration.split(/[A-Z]+/));
+			});
+			console.log(data);
+			// yes: hand over to displayResultList()
+			displayResultList();
+		}
+	}
+},
+
+// displays the result list, obviously.
+displayResultList = function() {
+	// write data into HTML
+	var olHtml = '';
+	data.forEach(function(el, i) {
+		olHtml += '<li id="yt' + i + '"><img src="' + el.snippet.thumbnails.default.url + '" alt="Video-Thumbnail" class="ytLink click"/>';
+		olHtml += '<div><h3 class="ytLink click">' + el.snippet.title;
+		olHtml += '</h3> <em>(' + translatePt(el.contentDetails.durSec) + ')</em>';
+		olHtml += '<p>' + el.snippet.description + '</p>';
+		olHtml += '<span>hinzugefügt am <time>' + translateTimestamp(el.snippet.publishedAt) + '</time></span>';
+		if (isItBlocked(el.contentDetails)) olHtml += ' <strong>Inhalt gesperrt</strong>';
+		olHtml += '</div></li>';
+	});
+	$('#playlist').innerHTML = olHtml;
+	var lis = $$('#playlist > li');
+	// attach events to list items
+	// 1) display preview on hover
+	for (var i = 0; i < lis.length; i++) {
+		lis[i].addEventListener('mouseover', function(ev) {
+			var thisEl = ev.target;
+			// search dataset number in parent elements
+			while (!thisEl.id || thisEl.id.indexOf('yt') < 0)
+				thisEl = thisEl.parentNode;
+			updatePreview(parseInt(thisEl.id.substr(2)));
+		}, false);
+		lis[i].addEventListener('mouseout', function() {
+			updatePreview();
+		}, false);
+	}
+	// 2) play single video on click
+	var h3s = $$('.ytLink');
+	for (var i = 0; i < h3s.length; i++) {
+		h3s[i].addEventListener('click', function(ev) {
+			var thisEl = ev.target;
+			while (!thisEl.id || thisEl.id.indexOf('yt') < 0)
+				thisEl = thisEl.parentNode;
+			nowPlaying = parseInt(thisEl.id.substr(2));
+			playSingleVideo();
+		});
+	}
+},
+
+// show preview for given dataset number
+updatePreview = function(nr) {
+	var fig = $('#preview'),
+	figHtml = '';
+	fig.innerHTML = '';
+	// preview is empty when playing or no dataset number
+	if (playing || nr === undefined) {
+		fig.style.display = 'none';
+		return;
+	}
+	// write data into HTML
+	fig.style.display = 'block';
+	figHtml += '<h2>' + data[nr].snippet.title + '</h2>';
+	figHtml += '<img src="' + data[nr].snippet.thumbnails.high.url + '" alt="Video-Thumbnail"/>';
+	figHtml += '<p><em>Länge: ' + translatePt(data[nr].contentDetails.durSec) + '</em></p>';
+	figHtml += '<p>' + data[nr].snippet.description + '</p>';
+	figHtml += '<p><em>hinzugefügt am <time>' + translateTimestamp(data[nr].snippet.publishedAt) + '</time></em></p>';
+	if (isItBlocked(data[nr].contentDetails)) figHtml += ' <strong>Video gesperrt</strong>';
+	fig.innerHTML = figHtml;
+},
+
+// sort result list according to given parameter
+sortList = function(param) {
+	var sortFunc;
+	switch(param) {
+		// alphabet, ascending
+		case 'sortAZ': sortFunc = function(a, b) {
+			var ta = a.snippet.title.toLowerCase(),
+			tb = b.snippet.title.toLowerCase();
+			return (ta < tb)? -1 : (ta > tb)? 1 : 0;
+		}; break;
+		// alphabet, descending
+		case 'sortZA': sortFunc = function(a, b) {
+			var ta = a.snippet.title.toLowerCase(),
+			tb = b.snippet.title.toLowerCase();
+			return (tb < ta)? -1 : (tb > ta)? 1 : 0;
+		}; break;
+		// numeric (added to playlist), ascending
+		case 'sort09': sortFunc = function(a, b) {
+			return b.snippet.position - a.snippet.position;
+		}; break;
+		// numeric (added to playlist), descending
+		case 'sort90': sortFunc = function(a, b) {
+			return a.snippet.position - b.snippet.position;
+		}; break;
+		// shortest first
+		case 'sortkl': sortFunc = function(a, b) {
+			return a.contentDetails.durSec - b.contentDetails.durSec;
+		}; break;
+		// longest first
+		case 'sortlk': sortFunc = function(a, b) {
+			return b.contentDetails.durSec - a.contentDetails.durSec;
+		}; break;
+	}
+	// sort with proper function
+	data.sort(sortFunc);
+	// update ids array
+	ids = [];
+	for (var i = 0; i < data.length; i++)
+		ids.push(data[i].snippet.resourceId.videoId);
+	// update result list
+	displayResultList();
+},
+
+// when YouTube IFrame Player API is loaded
+onYouTubeIframeAPIReady = function() {
+	// create player object
+	player = new YT.Player('player', {
+		width: 640,
+		height: 390,
+		playerVars: {
+			controls: 0,
+			showinfo: 0,
+			modestbranding: 1,
+			cc_load_policy: 1
+		},
+		events: {
+			//'onReady': onPlayerReady,
+			'onStateChange': onStateChange,
+			'onError': onError
+		}
+	});
+},
+
+// triggers when player state changes
+onStateChange = function(ev) {
+	// stop updating progress bar
+	clearInterval(progressbarInterval);
+	switch(ev.data) {
+		// is it playing?
+		case YT.PlayerState.PLAYING:
+			controlPlay.style.backgroundImage = 'url(iconPause.png)';
+			// update number of played video and information
+			if (player.getPlaylist() && player.getPlaylist().length) {
+				nowPlaying = player.getPlaylistIndex();
+			}
+			updateVideoInfo();
+			// update progressbar and playtime info
+			progressbarInterval = setInterval(function() {
+				var currentTime = player.getCurrentTime(),
+				share;
+				share = currentTime / player.getDuration();
+				progressbarInner.style.width = share * progressbarWidth + 'px';
+				slider.style.left = share * progressbarWidth - 8 + 'px';
+				timePlayed.textContent = translatePt(Math.floor(currentTime));
+			}, 300);
+			break;
+		case YT.PlayerState.PAUSED:
+			controlPlay.style.backgroundImage = 'url(iconPlay.png)';
+			break;
+		case YT.PlayerState.ENDED:
+			progressbarInner.style.width = 0;
+			break;
+	}
+},
+
+// triggers on error. Nothing to do.
+onError = function(ev) {
+	console.log(ev);
+},
+
+// play video with the number nowPlaying
+playSingleVideo = function() {
+	// unload playlist
+	if (player.getPlaylist()) player.loadPlaylist();
+	// load video
+	player.cueVideoById(data[nowPlaying].snippet.resourceId.videoId);
+	controlPrev.style.visibility = 'hidden';
+	controlNext.style.visibility = 'hidden';
+	// update metadata and display player
+	updateVideoInfo();
+	showPlayer();
+},
+
+// show information for video nowPlaying
+updateVideoInfo = function() {
+	movieTitle.textContent = data[nowPlaying].snippet.title;
+	// make time marks in the description clickable
+	movieDesc.innerHTML = data[nowPlaying].snippet.description.replace(/(\d+:\d+(?::\d+)?)/g, '<span class="click time">$1</span>');
+	movieDuration.textContent = translatePt(player.getDuration());
+	// jump to time mark when it is clicked
+	var times = $$('.time');
+	for (var i = 0; i < times.length; i++) {
+		times[i].addEventListener('click', function(ev) {
+			player.seekTo(translateHMS(ev.target.textContent.split(':')));
+		}, false);
+	}
+},
+
+// show video player area
+showPlayer = function(nr) {
+	// hide preview area
+	updatePreview();
+	// stop it from popping up again
+	playing = true;
+	playerBox.style.display = 'block';
+	progressbarWidth = progressbar.getBoundingClientRect().width;
+	// play the video or the playlist
+	player.playVideo();
+},
+
+// Helper functions
+
+// translates seconds into H:M:S
+translatePt = function(ptime) {
+	ptime = Math.floor(ptime);
+	var units = [];
+	units[1] = Math.floor(ptime / 60);
+	units[0] = ptime - units[1] * 60;
+	if (units[1] >= 60) {
+		units.push(Math.floor(units[1] / 60));
+		units[1] -= units[2] * 60;
+	}
+	for (var i = 0; i < units.length - 1; i++)
+		if (units[i] < 10) units[i] = '0' + units[i];
+	return units.reverse().join(':');
+},
+
+// translates H:M:S into seconds
+translateHMS = function(hms) {
+	var factor = 1,
+	durSec = 0;
+	hms.reverse().forEach(function(hmsplit) {
+		if (!hmsplit.match(/^\d+$/)) return;
+		durSec += parseInt(hmsplit) * factor;
+		factor *= 60;
+	});
+	return durSec;
+},
+
+// translates RFC 3339 to dd.mm.yyyy
+translateTimestamp = function(ts) {
+	ts = ts.substr(0, ts.indexOf('T'));
+	var dates = ts.split('-');
+	return dates.reverse().join('.');
+},
+
+// find out if video is blocked in Germany
+isItBlocked = function(vid) {
+	var blocked = false;
+	//if (vid.licensedContent) blocked = true;
+	if (vid.regionRestriction) {
+		if (vid.regionRestriction.allowed) {
+			blocked = (vid.regionRestriction.allowed.indexOf('DE') >= 0)? false : true;
+		} else if (vid.regionRestriction.blocked) {
+			blocked = (vid.regionRestriction.blocked.indexOf('DE') >= 0)? true : false;
+		}
+	}
+	return blocked;
+};
+
+// Controls
+
+// play all (whole playlist)
+controlPlayAll.addEventListener('click', function() {
+	player.loadPlaylist(ids);
+	showPlayer();
+	controlPrev.style.visibility = 'visible';
+	controlNext.style.visibility = 'visible';
+}, false);
+
+// sort playlist
+for (var i = 0; i < sortOptions.length; i++) {
+	sortOptions[i].addEventListener('click', function(ev) {
+		sortList(ev.target.id);
+		player.loadPlaylist(ids);
+	}, false);
+}
+
+// play/pause button
+controlPlay.addEventListener('click', function() {
+	if (player.getPlayerState() === 1)
+		player.pauseVideo();
+	else
+		player.playVideo();
+}, false);
+
+// previous and next buttons
+controlPrev.addEventListener('click', function() {
+	player.previousVideo();
+}, false);
+controlNext.addEventListener('click', function() {
+	player.nextVideo();
+}, false);
+
+// slider movement
+slider.addEventListener('dragstart', function() {
+	this.style.opacity = 0.5;
+	this.style.cursor = 'move';
+} , false);
+// update progress bar and time display on drag
+document.addEventListener('dragover', function(ev) {
+	var sliderX = ev.layerX;
+	if (sliderX < 0) sliderX = 0;
+	if (sliderX > progressbarWidth) sliderX = progressbarWidth;
+  timePlayed.textContent = translatePt(data[nowPlaying].contentDetails.durSec * (sliderX / progressbarWidth));
+}, false);
+// play at drop point
+slider.addEventListener('dragend', function(ev) {
+	var sliderX = slider.offsetLeft + ev.layerX;
+	if (sliderX < 0) sliderX = 0;
+	if (sliderX > progressbarWidth) sliderX = progressbarWidth;
+	jumpTo = data[nowPlaying].contentDetails.durSec * (sliderX / progressbarWidth);
+	player.seekTo(jumpTo, true);
+	progressbar.style.cursor = 'auto';
+	this.style.cursor = 'pointer';
+	this.style.opacity = 1;
+} , false);
+
+// close player
+$('#playerClose').addEventListener('click', function() {
+	console.info('Stop');
+	player.stopVideo();
+	playing = false;
+	playerBox.style.display = 'none';
+}, false);
+
+// start: load Ajax data
+ajax('playlistItems?part=snippet&playlistId=' + videolist + '&maxResults=50');
+	</script>
+</body>
+</html>
