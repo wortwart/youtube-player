@@ -174,14 +174,13 @@
 	</div>
 
 	<script type="text/javascript" src="https://www.youtube.com/iframe_api"></script>
+	<script type="text/javascript" src="key.js"></script>
 
 	<script type="text/javascript">
 // Shortcuts. Yes, I could have used jQuery.
 var $ = document.querySelector.bind(document),
 $$ = document.querySelectorAll.bind(document),
-youtubeAPIKey = 'YOUR API KEY',
 youtubeURL = 'https://www.googleapis.com/youtube/v3/',
-videolist = 'YOUR PLAYLIST',
 data = [],
 ids = [],
 player,
@@ -287,6 +286,7 @@ displayResultList = function() {
 	// write data into HTML
 	var olHtml = '';
 	data.forEach(function(el, i) {
+		if (!el.snippet.thumbnails) return; // deleted videos
 		olHtml += '<li id="yt' + i + '"><img src="' + el.snippet.thumbnails.default.url + '" alt="Video-Thumbnail" class="ytLink click"/>';
 		olHtml += '<div><h3 class="ytLink click">' + el.snippet.title;
 		olHtml += '</h3> <em>(' + translatePt(el.contentDetails.durSec) + ')</em>';
